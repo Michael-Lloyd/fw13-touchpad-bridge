@@ -23,6 +23,9 @@ enum {
 };
 
 #define EPNUM_HID 0x81
+// interrupt IN packet size, full-speed maximum and fits the approx 35 byte
+// PTP report
+#define HID_EP_SIZE 64
 #define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN)
 
 // offset of wReportLength within configuration descriptor
@@ -71,7 +74,7 @@ const uint8_t *tud_descriptor_configuration_cb(uint8_t index) {
         TUD_CONFIG_DESCRIPTOR(
                 1, ITF_COUNT, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
         TUD_HID_DESCRIPTOR(
-                ITF_HID, 0, HID_ITF_PROTOCOL_NONE, 0, EPNUM_HID, CFG_TUD_HID_EP_BUFSIZE, 5),
+                ITF_HID, 0, HID_ITF_PROTOCOL_NONE, 0, EPNUM_HID, HID_EP_SIZE, 5),
     };
 
     memcpy(cfg, templ, sizeof(templ));

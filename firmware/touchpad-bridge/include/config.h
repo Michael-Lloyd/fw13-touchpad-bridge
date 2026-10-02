@@ -34,5 +34,7 @@
 #define TP_REPORT_DESC_MAX  768         // 687-byte descriptor size from touchpad-adventure
 // PTP input report is ~35 bytes 
 #define TP_INPUT_REPORT_MAX 64          // ~35-byte report size from touchpad-adventure
+// largest feature report is the 256-byte PTPHQA certification blob
+#define TP_FEATURE_REPORT_MAX 256
 
 #endif // _CONFIG_H_

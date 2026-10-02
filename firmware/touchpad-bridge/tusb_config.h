@@ -28,7 +28,10 @@
 #define CFG_TUD_CDC 0
 #define CFG_TUD_MSC 0
 
-// Must be greater-eq touchpad's max input report (the PTP report is around 35 bytes)
-#define CFG_TUD_HID_EP_BUFSIZE  64
+// Sizes the HID input buffer and the control buffer for GET/SET_REPORT, 
+// so it must hold the largest feature report. 
+// Windows reads that blob and the device capabilities before it starts 
+// the Precision Touchpad stack.
+#define CFG_TUD_HID_EP_BUFSIZE  260
 
 #endif // _TUSB_CONFIG_H_

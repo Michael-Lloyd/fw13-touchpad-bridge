@@ -24,6 +24,9 @@
 // plus a timeout long enough for a reset to complete.
 #define I2C_HID_INPUT_SCRATCH    64
 #define I2C_HID_RESET_TIMEOUT_MS 500
+// Scratch buffer for GET/SET_REPORT frames. 
+// Largest feature report is 256 byte cert blob + id + length and header
+#define I2C_HID_REPORT_SCRATCH   272
 
 // write a little endian 16-bit register pointer then read len number of bytes 
 static int reg_read(struct i2c_hid_dev *dev, uint16_t reg, uint8_t *buf, size_t len) {
@@ -167,27 +170,89 @@ int i2c_hid_get_input(struct i2c_hid_dev *dev, uint8_t *buf,
     return 0;
 }
 
+static size_t cmd_encode(uint8_t *out, uint8_t type, uint8_t report_id, uint8_t opcode) {
+    size_t n = 0;
+    if (report_id < 0x0f) {
+        out[n++] = (uint8_t)((type & 0x03) << 4 | report_id);
+        out[n++] = opcode;
+    } else {
+        out[n++] = (uint8_t)((type & 0x03) << 4 | 0x0f);
+        out[n++] = opcode;
+        out[n++] = report_id;
+    }
+    return n;
+}
+
 int i2c_hid_get_report(struct i2c_hid_dev *dev, uint8_t type, uint8_t report_id,
                        uint8_t *buf, uint16_t max, uint16_t *out_len) {
-    // TODO: command-register GET_REPORT sequence (type and report id),
-    // then read the result from the data register.
-    (void)dev;
-    (void)type;
-    (void)report_id;
-    (void)buf;
-    (void)max;
-    (void)out_len;
-    return -1;
+
+    uint8_t c[7];
+    size_t n = 0;
+    c[n++] = (uint8_t)(dev->desc.command_reg & 0xff);
+    c[n++] = (uint8_t)(dev->desc.command_reg >> 8);
+    n += cmd_encode(c + n, type, report_id, I2C_HID_OP_GET_REPORT);
+    c[n++] = (uint8_t)(dev->desc.data_reg & 0xff);
+    c[n++] = (uint8_t)(dev->desc.data_reg >> 8);
+
+    if (i2c_write_blocking(dev->i2c, dev->addr, c, n, true) != (int)n) {
+        return -1;
+    }
+
+    uint8_t raw[I2C_HID_REPORT_SCRATCH];
+    size_t want = (size_t)max + 3;
+    if (want > sizeof(raw)) {
+        want = sizeof(raw);
+    }
+    if (i2c_read_blocking(dev->i2c, dev->addr, raw, want, false) != (int)want) {
+        return -1;
+    }
+
+    uint16_t total = (uint16_t)(raw[0] | raw[1] << 8);
+    if (total < 2) {
+        return -1;
+    }
+    if (total > want) {
+        total = (uint16_t)want;
+    }
+
+    // the report keeps its id byte; callers that don't want it strip it
+    *out_len = (uint16_t)(total - 2);
+    if (*out_len > max) {
+        *out_len = max;
+    }
+    memcpy(buf, raw + 2, *out_len);
+
+    return 0;
 }
 
 int i2c_hid_set_report(struct i2c_hid_dev *dev, uint8_t type, uint8_t report_id,
                        const uint8_t *buf, uint16_t len) {
-    // TODO: command-register SET_REPORT sequence writing into the data
-    // register.
-    (void)dev;
-    (void)type;
-    (void)report_id;
-    (void)buf;
-    (void)len;
-    return -1;
+
+    // write [command_reg][opcode header][data_reg][len lo][len hi]
+    // [report id (if nonzero)][payload ...]; len counts itself and the id
+    uint8_t c[I2C_HID_REPORT_SCRATCH];
+    size_t n = 0;
+    uint16_t data_len = (uint16_t)(2 + (report_id ? 1 : 0) + len);
+
+    if ((size_t)len + 10 > sizeof(c)) {
+        return -1;
+    }
+
+    c[n++] = (uint8_t)(dev->desc.command_reg & 0xff);
+    c[n++] = (uint8_t)(dev->desc.command_reg >> 8);
+    n += cmd_encode(c + n, type, report_id, I2C_HID_OP_SET_REPORT);
+    c[n++] = (uint8_t)(dev->desc.data_reg & 0xff);
+    c[n++] = (uint8_t)(dev->desc.data_reg >> 8);
+    c[n++] = (uint8_t)(data_len & 0xff);
+    c[n++] = (uint8_t)(data_len >> 8);
+    if (report_id) {
+        c[n++] = report_id;
+    }
+    memcpy(c + n, buf, len);
+    n += len;
+
+    if (i2c_write_blocking(dev->i2c, dev->addr, c, n, false) != (int)n) {
+        return -1;
+    }
+    return 0;
 }

@@ -5,6 +5,7 @@
  * Copyright (C) 2026 Michael Lloyd
  */
 
+#include <string.h>
 #include <hardware/gpio.h>
 #include <pico/stdlib.h>
 #include <tusb.h>
@@ -52,9 +53,6 @@ int touchpad_init(void) {
         return -1;
     }
 
-    // TODO: cache the certification blob (feature report id 5) here so
-    // touchpad_get_report() can answer the host's request instantly.
-    //
     return 0;
 }
 
@@ -84,12 +82,32 @@ void touchpad_task(void) {
 }
 
 int touchpad_get_report(uint8_t type, uint8_t report_id, uint8_t *buf, uint16_t max) {
-    // TODO: serve the cached certification blob for the feature report,
-    // otherwise translate to i2c_hid_get_report().
+
+    // device echoes report id ahead of payload but tusb has already
+    // written it to the USB response, so read one byte extra and drop it
+    uint8_t raw[TP_FEATURE_REPORT_MAX + 1];
+    uint16_t want = (uint16_t)(max + (report_id ? 1 : 0));
+    if (want > sizeof(raw)) {
+        want = sizeof(raw);
+    }
+
     uint16_t out_len = 0;
-    if (i2c_hid_get_report(&tp_dev, type, report_id, buf, max, &out_len) != 0) {
+    if (i2c_hid_get_report(&tp_dev, type, report_id, raw, want, &out_len) != 0) {
         return -1;
     }
+
+    const uint8_t *payload = raw;
+    if (report_id) {
+        if (out_len < 1 || raw[0] != report_id) {
+            return -1;
+        }
+        payload++;
+        out_len--;
+    }
+    if (out_len > max) {
+        out_len = max;
+    }
+    memcpy(buf, payload, out_len);
     return (int)out_len;
 }
 
